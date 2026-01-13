@@ -1,7 +1,8 @@
 # axioma-criterion-engine
 El motor que enseña criterio al humano y a la IA
 
-# Axioma Criterion Engine v3
+Es:
+# Tri-Axial Discernment Engine v3
 
 Motor de criterio basado en el Axioma del Absoluto y en el Método Triaxial de Discernimiento (F–C–P), diseñado para ayudar a humanos e IAs a tomar mejores decisiones.
 
