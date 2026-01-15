@@ -1,5 +1,3 @@
----
-
 ## 📄 Licencia
 Este proyecto está licenciado bajo los términos de la **MIT License**.
 
@@ -9,6 +7,7 @@ siempre que conserves el aviso de copyright:
 **© 2026 Ernesto Rosati**
 
 Para más detalles, consulta el archivo `LICENSE` incluido en este repositorio.
+
 # Axioma-Criterion Engine V4 + IA Agent
 Evaluación estructurada y narrativa de decisiones basada en el Método Triaxial de Discernimiento (Fundamento – Contexto – Principio)
 
