@@ -10,9 +10,9 @@ Finalmente, un script de ejemplo para correrlo desde consola:
 
 from __future__ import annotations
 
-from axioma_criterion_engine.core.basic_engine_v4 import CriterionEngineV4
-from axioma_criterion_engine.llm_client import LLMClient
-from axioma_criterion_engine.agents.ia_agent import CriterionAgent
+from core.basic_engine_v4 import CriterionEngineV4
+from llm_client import LLMClient
+from agents.ia_agent import CriterionAgent
 
 
 def main() -> None:
