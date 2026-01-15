@@ -1,11 +1,3 @@
-
----
-
-## 4. Demo: `examples/v4_ia_agent_demo.py`
-
-Finalmente, un script de ejemplo para correrlo desde consola:
-
-```python
 # axioma_criterion_engine/examples/v4_ia_agent_demo.py
 
 from __future__ import annotations
