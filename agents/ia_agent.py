@@ -4,8 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict
 
-from axioma_criterion_engine.core.basic_engine_v4 import CriterionEngineV4
-from axioma_criterion_engine.llm_client import LLMClient
+from core.basic_engine_v4 import CriterionEngineV4
+from llm_client import LLMClient
 
 
 @dataclass
