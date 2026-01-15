@@ -76,4 +76,29 @@ Afirmación evaluada:
 
 Resultado estructurado del Motor de Criterio (JSON):
 ```json
+
+    # ---------- API PÚBLICA ----------
+
+    def evaluate(self, user_statement: str) -> CriterionAgentResult:
+        """
+        Flujo completo del agente:
+        1. Aclarar la afirmación.
+        2. Evaluar con el Motor V4 (non-interactive).
+        3. Generar narrativa IA.
+        """
+        # 1. Clarificar
+        clarified = self._clarify_statement(user_statement)
+
+        # 2. Preparar datos y llamar al motor
+        engine_input = self._build_engine_input(clarified)
+        raw_engine_output = self.engine.evaluate_non_interactive(**engine_input)
+
+        # 3. Narrar resultado
+        narrative = self._narrate_result(clarified, raw_engine_output)
+
+        return CriterionAgentResult(
+            raw_engine_output=raw_engine_output,
+            narrative=narrative,
+        )
+
 {engine_output}
