@@ -37,7 +37,8 @@ def main() -> None:
     result = agent.evaluate(afirmacion)
 
     print("\n--- RESULTADO DEL MOTOR (estructura) ---")
-    print(result.raw_engine_output)
+   import json
+   print(json.dumps(result.raw_engine_output, indent=4))
 
     print("\n--- DICTAMEN DEL AGENTE (narrativa) ---\n")
     print(result.narrative)
