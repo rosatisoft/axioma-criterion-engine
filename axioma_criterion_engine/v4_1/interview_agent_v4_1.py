@@ -464,7 +464,7 @@ class InterviewAgentV41:
         return {"facts_key": "", "clarity": ClarityLevel.MEDIUM, "source": "user"}
 
     def _empty_context(self) -> ContextBlock:
-        return {"current_situation": "", "time_horizon": TimeHorizon.UNKNOWN, "source": "user"}
+        return {"current_situation": "", "time_horizon": TimeHorizon.MEDIUM, "source": "user"}
 
     def _empty_principle(self) -> PrincipleBlock:
         return {"declared_purpose": "", "alignment": ClarityLevel.MEDIUM, "source": "user"}
@@ -491,7 +491,7 @@ class InterviewAgentV41:
             return TimeHorizon.SHORT
         if any(x in t for x in ["largo plazo", "permanente", "para siempre", "a largo plazo"]):
             return TimeHorizon.LONG
-        return TimeHorizon.UNKNOWN
+        return TimeHorizon.MEDIUM
 
     # -------------------------
     # Small utilities
@@ -542,3 +542,4 @@ class InterviewAgentV41:
             }
         )
         obj["contradictions"] = contradictions
+
