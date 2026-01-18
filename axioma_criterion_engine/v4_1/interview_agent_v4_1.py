@@ -15,10 +15,10 @@ Design choices:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Callable, Dict, List, Optional, Tuple
 
 from .discernment_enums import (
-    AnswerSource,
     Axis,
     ClarityLevel,
     CompletenessLevel,
@@ -36,11 +36,12 @@ from .discernment_types import (
     InterviewState,
     PrincipleBlock,
 )
-
+from .soft_contradiction_detector import detect_soft_contradictions
 
 # -----------------------------
 # Public hook interfaces
 # -----------------------------
+
 
 class LLMInterface:
     """
@@ -58,66 +59,55 @@ UserInputFn = Callable[[str], str]
 
 
 # -----------------------------
-# Configuration
+# Agent config
 # -----------------------------
 
-@dataclass(frozen=True)
-class InterviewConfig:
-    """
-    Safety/usability constraints.
-    - max_total_questions: hard cap for the interview.
-    - max_questions_per_axis: hard cap per axis.
-    - allow_single_reorientation: if True, can reorient once based on signals.
-    """
 
-    max_total_questions: int = 9
-    max_questions_per_axis: int = 3
+@dataclass
+class InterviewConfigV41:
+    max_turns: int = 12
+    per_axis_max: int = 3
     allow_single_reorientation: bool = True
+    stop_on_minimum_completeness: bool = True
 
 
 # -----------------------------
-# Question bank (base)
+# Question bank (MVP)
 # -----------------------------
 
-Question = Tuple[str, Axis, str]  # (question_id, axis, question_text)
+# NOTE: IDs matter only as stable references for logs.
+# We keep the phrasing in Spanish for now.
 
-
-QUESTION_BANK: Dict[Theme, List[Question]] = {
+QUESTION_BANK: Dict[Theme, List[Tuple[str, Axis, str]]] = {
     Theme.SURVIVAL_STABILITY: [
         ("SS_F_1", Axis.FOUNDATION, "¿Qué hecho concreto hace necesaria esta decisión ahora?"),
         ("SS_F_2", Axis.FOUNDATION, "¿Qué ocurriría realmente si no tomaras esta decisión?"),
         ("SS_F_3", Axis.FOUNDATION, "¿Esto es una necesidad comprobable o una percepción de urgencia?"),
-
         ("SS_C_1", Axis.CONTEXT, "¿Qué circunstancias actuales te colocan en esta situación?"),
         ("SS_C_2", Axis.CONTEXT, "¿Qué alternativas reales existen, aunque no sean ideales?"),
         ("SS_C_3", Axis.CONTEXT, "¿Esta decisión es temporal o te ata a largo plazo?"),
-
         ("SS_P_1", Axis.PRINCIPLE, "¿Qué estás preservando al tomar esta decisión?"),
-        ("SS_P_2", Axis.PRINCIPLE, "¿Qué estarías sacrificando si la aceptas?"),
-        ("SS_P_3", Axis.PRINCIPLE, "¿Esta decisión te acerca o te aleja de la persona que quieres ser?"),
+        ("SS_P_2", Axis.PRINCIPLE, "¿Qué propósito explícito estás declarando con esta decisión?"),
+        ("SS_P_3", Axis.PRINCIPLE, "¿Qué valor se dañaría si haces lo contrario?"),
     ],
     Theme.ETHICS_VALUES: [
-        ("EV_F_1", Axis.FOUNDATION, "¿Qué parte de esta decisión consideras problemática?"),
-        ("EV_F_2", Axis.FOUNDATION, "¿Qué hecho concreto te hace dudar de su corrección?"),
-        ("EV_F_3", Axis.FOUNDATION, "¿Qué estás asumiendo como “normal” sin cuestionarlo?"),
-
-        ("EV_C_1", Axis.CONTEXT, "¿Qué presión o beneficio hace atractiva esta opción?"),
-        ("EV_C_2", Axis.CONTEXT, "¿Quiénes se verían afectados por esta decisión?"),
-        ("EV_C_3", Axis.CONTEXT, "¿Este contexto justifica la acción o solo la explica?"),
-
-        ("EV_P_1", Axis.PRINCIPLE, "¿Qué valor se vería comprometido si actúas así?"),
-        ("EV_P_2", Axis.PRINCIPLE, "¿Aceptarías esta decisión como regla general?"),
-        ("EV_P_3", Axis.PRINCIPLE, "¿Cómo te explicarías esta decisión dentro de un año?"),
+        ("EV_F_1", Axis.FOUNDATION, "¿Qué hechos verificables sostienen tu afirmación (no interpretaciones)?"),
+        ("EV_F_2", Axis.FOUNDATION, "¿Qué evidencia sólida podría contradecir tu postura?"),
+        ("EV_F_3", Axis.FOUNDATION, "¿Qué tan claro es para ti qué está 'bien' o 'mal' aquí, y por qué?"),
+        ("EV_C_1", Axis.CONTEXT, "¿Quiénes se verán afectados y de qué forma concreta?"),
+        ("EV_C_2", Axis.CONTEXT, "¿Qué incentivos o presiones del entorno están influyendo?"),
+        ("EV_C_3", Axis.CONTEXT, "¿Qué consecuencias a corto y largo plazo son plausibles?"),
+        ("EV_P_1", Axis.PRINCIPLE, "¿Qué principio ético estás tratando de honrar (en una frase)?"),
+        ("EV_P_2", Axis.PRINCIPLE, "¿Qué línea no cruzarías aunque te convenga?"),
+        ("EV_P_3", Axis.PRINCIPLE, "¿Qué opción preserva mejor dignidad/verdad/justicia según tu criterio?"),
     ],
     Theme.EXTERNAL_PRESSURE: [
-        ("EP_F_1", Axis.FOUNDATION, "¿Quién o qué está impulsando esta decisión?"),
-        ("EP_F_2", Axis.FOUNDATION, "¿Qué ocurriría si decidieras no responder ahora?"),
-        ("EP_F_3", Axis.FOUNDATION, "¿Esta decisión nace de ti o de una expectativa externa?"),
-
-        ("EP_C_1", Axis.CONTEXT, "¿Qué tipo de presión estás experimentando (tiempo, miedo, aprobación)?"),
-        ("EP_C_2", Axis.CONTEXT, "¿Esta presión es explícita o implícita?"),
-        ("EP_C_3", Axis.CONTEXT, "¿Qué perderías realmente si no cumples esa expectativa?"),
-
+        ("EP_F_1", Axis.FOUNDATION, "¿Qué presión externa específica está ocurriendo (quién/qué)?"),
+        ("EP_F_2", Axis.FOUNDATION, "¿Qué consecuencias reales existen si no cedes a la presión?"),
+        ("EP_F_3", Axis.FOUNDATION, "¿Qué parte es un hecho y qué parte es interpretación o miedo?"),
+        ("EP_C_1", Axis.CONTEXT, "¿Qué opciones reales tienes si pones límites?"),
+        ("EP_C_2", Axis.CONTEXT, "¿Qué apoyos o recursos existen en tu entorno?"),
+        ("EP_C_3", Axis.CONTEXT, "¿Qué tan temporal o permanente es esta presión?"),
         ("EP_P_1", Axis.PRINCIPLE, "¿Qué estás intentando evitar al decidir así?"),
         ("EP_P_2", Axis.PRINCIPLE, "¿Esta decisión protege algo valioso o solo evita conflicto?"),
         ("EP_P_3", Axis.PRINCIPLE, "¿Qué precedente establece esta decisión para ti?"),
@@ -129,53 +119,59 @@ QUESTION_BANK: Dict[Theme, List[Question]] = {
 # Interview Agent
 # -----------------------------
 
+
 class InterviewAgentV41:
     def __init__(
         self,
         llm: Optional[LLMInterface] = None,
         user_input: Optional[UserInputFn] = None,
-        config: Optional[InterviewConfig] = None,
+        config: Optional[InterviewConfigV41] = None,
     ) -> None:
         self.llm = llm
         self.user_input = user_input or (lambda prompt: input(prompt))
-        self.config = config or InterviewConfig()
+        self.config = config or InterviewConfigV41()
 
     # -------------------------
-    # Entry point
+    # Public API
     # -------------------------
 
-    def run(self, original_statement: str) -> DiscernmentObject:
+    def run(self, statement: str) -> DiscernmentObject:
         """
-        Run the guided interview and produce a DiscernmentObject.
-        """
-        original_statement = (original_statement or "").strip()
-        if not original_statement:
-            raise ValueError("original_statement must be non-empty")
+        Run an interview for a given statement.
 
+        Returns a DiscernmentObject:
+        - original_statement
+        - theme classification
+        - axis blocks
+        - contradictions (hard, optional)
+        - soft_contradictions (V4.1.1, optional)
+        """
         state: InterviewState = {
             "turns": 0,
             "asked": [],
             "reoriented": False,
+            "stop_reason": "",
         }
 
-        # 1) Initial theme hypothesis (simple heuristic; can be replaced by LLM classification)
-        theme = self._classify_theme_initial(original_statement)
-        state["current_theme"] = theme
+        theme = self._classify_theme_initial(statement)
 
-        # 2) Initialize a partial DiscernmentObject (incremental build)
         obj: DiscernmentObject = {
-            "original_statement": original_statement,
+            "original_statement": statement,
             "dominant_theme": theme,
             "secondary_themes": [],
             "contradictions": [],
             "completeness": CompletenessLevel.PARTIAL,
             "agent_notes": "",
+            "foundation": self._empty_foundation(),
+            "context": self._empty_context(),
+            "principle": self._empty_principle(),
+            "decision_object": "",
         }
 
-        # 3) Ask questions, collect answers, possibly reorient once
-        self._interview_loop(obj, state)
+        asked_per_axis = {Axis.FOUNDATION: 0, Axis.CONTEXT: 0, Axis.PRINCIPLE: 0}
 
-        # 4) Finalize derived fields (decision_object, completeness, notes)
+        self._interview_loop(obj, state, asked_per_axis)
+
         self._finalize_discernment_object(obj, state)
 
         return obj
@@ -184,45 +180,40 @@ class InterviewAgentV41:
     # Interview loop
     # -------------------------
 
-    def _interview_loop(self, obj: DiscernmentObject, state: InterviewState) -> None:
-        theme: Theme = obj["dominant_theme"]
-
-        asked_per_axis: Dict[Axis, int] = {
-            Axis.FOUNDATION: 0,
-            Axis.CONTEXT: 0,
-            Axis.PRINCIPLE: 0,
-        }
-
-        questions = QUESTION_BANK[theme]
+    def _interview_loop(
+        self,
+        obj: DiscernmentObject,
+        state: InterviewState,
+        asked_per_axis: Dict[Axis, int],
+    ) -> None:
+        theme = obj["dominant_theme"]
+        questions = QUESTION_BANK.get(theme, QUESTION_BANK[Theme.SURVIVAL_STABILITY])
 
         for qid, axis, qtext in questions:
-            if self._should_stop(state, asked_per_axis):
+            if self._should_stop(obj, state, asked_per_axis):
                 break
 
-            if asked_per_axis[axis] >= self.config.max_questions_per_axis:
+            if qid in state["asked"]:
                 continue
 
-            # Ask the question
+            if asked_per_axis[axis] >= self.config.per_axis_max:
+                continue
+
             answer = self._ask(qid, qtext, state)
             asked_per_axis[axis] += 1
 
-            # Update DiscernmentObject with the new answer (axis-specific)
             self._apply_answer(obj, axis, answer)
 
-            # After early answers, check signals (reorientation / contradictions)
+            # After early answers, detect signals and maybe reorient
             if self.config.allow_single_reorientation:
+                prior_theme = obj["dominant_theme"]
                 self._detect_signals_and_maybe_reorient(obj, state)
 
-                # If reoriented, restart question flow with the new theme (once)
-                if state.get("reoriented") and obj["dominant_theme"] != theme:
-                    self._append_note(obj, f"Reoriented theme: {theme.value} -> {obj['dominant_theme'].value}")
-                    # Restart loop with new theme, preserving asked history
+                # If reoriented, restart loop once with new theme
+                if state.get("reoriented") and obj["dominant_theme"] != prior_theme:
+                    self._append_note(obj, f"Reoriented theme: {prior_theme.value} -> {obj['dominant_theme'].value}")
                     self._interview_loop_restart(obj, state, asked_per_axis)
-                    return  # important: stop current loop after restart
-
-        # Stop reason note
-        if state.get("stop_reason"):
-            self._append_note(obj, f"Stop reason: {state['stop_reason']}")
+                    break
 
     def _interview_loop_restart(
         self,
@@ -230,97 +221,90 @@ class InterviewAgentV41:
         state: InterviewState,
         asked_per_axis: Dict[Axis, int],
     ) -> None:
-        """
-        Called once after reorientation. Adds at most one extra question per relevant axis.
-        Uses the same stop criteria.
-        """
-        new_theme = obj["dominant_theme"]
-        questions = QUESTION_BANK[new_theme]
-
-        # Allow a small extension after reorientation: max +1 per axis (controlled)
-        extra_cap_per_axis = 1
-        used_extra: Dict[Axis, int] = {Axis.FOUNDATION: 0, Axis.CONTEXT: 0, Axis.PRINCIPLE: 0}
+        theme = obj["dominant_theme"]
+        questions = QUESTION_BANK.get(theme, QUESTION_BANK[Theme.SURVIVAL_STABILITY])
 
         for qid, axis, qtext in questions:
-            if self._should_stop(state, asked_per_axis):
+            if self._should_stop(obj, state, asked_per_axis):
                 break
 
-            if used_extra[axis] >= extra_cap_per_axis:
+            if qid in state["asked"]:
                 continue
 
-            # Ask and apply
+            if asked_per_axis[axis] >= self.config.per_axis_max:
+                continue
+
             answer = self._ask(qid, qtext, state)
             asked_per_axis[axis] += 1
-            used_extra[axis] += 1
             self._apply_answer(obj, axis, answer)
-
-        if state.get("stop_reason"):
-            self._append_note(obj, f"Stop reason: {state['stop_reason']}")
-
-    # -------------------------
-    # Stop criteria
-    # -------------------------
-
-    def _should_stop(self, state: InterviewState, asked_per_axis: Dict[Axis, int]) -> bool:
-        # Hard caps
-        if state["turns"] >= self.config.max_total_questions:
-            state["stop_reason"] = "max_total_questions"
-            return True
-
-        # If we already have at least 1 question per axis, we can stop (minimum completeness)
-        if all(asked_per_axis[a] >= 1 for a in (Axis.FOUNDATION, Axis.CONTEXT, Axis.PRINCIPLE)):
-            # We still allow continuing until caps, but can stop early if user indicates.
-            # In skeleton: we stop at minimum completeness to keep MVP tight.
-            state["stop_reason"] = "minimum_completeness_reached"
-            return True
-
-        return False
 
     # -------------------------
     # Asking / applying answers
     # -------------------------
 
-    def _ask(self, qid: str, qtext: str, state: InterviewState) -> str:
-        state["turns"] += 1
+    def _ask(self, qid: str, question: str, state: InterviewState) -> str:
+        state["turns"] = int(state.get("turns", 0)) + 1
         state["asked"].append(qid)
-
-        prompt = f"\n[{qid}] {qtext}\n> "
-        answer = self.user_input(prompt).strip()
-        return answer
+        prompt = f"\n[{qid}] {question}\n> "
+        return (self.user_input(prompt) or "").strip()
 
     def _apply_answer(self, obj: DiscernmentObject, axis: Axis, answer: str) -> None:
-        """
-        MVP: Store raw answers into axis blocks as text.
-        Later: LLM-assisted extraction to structured fields.
-        """
-        if not answer:
-            # Keep silence as signal; do not force content.
-            return
-
         if axis == Axis.FOUNDATION:
-            block: FoundationBlock = obj.get("foundation", {})
-            # For MVP we aggregate into facts_key; later can split.
-            prior = block.get("facts_key", "")
-            block["facts_key"] = (prior + "\n" if prior else "") + answer
-            block.setdefault("clarity", ClarityLevel.MEDIUM)
-            block.setdefault("source", AnswerSource.USER)
-            obj["foundation"] = block
+            f = obj.get("foundation", self._empty_foundation())
+            f["facts_key"] = self._append_line(f.get("facts_key", ""), answer)
+            f["clarity"] = self._infer_clarity(f["facts_key"])
+            obj["foundation"] = f
 
         elif axis == Axis.CONTEXT:
-            block2: ContextBlock = obj.get("context", {})
-            prior2 = block2.get("current_situation", "")
-            block2["current_situation"] = (prior2 + "\n" if prior2 else "") + answer
-            block2.setdefault("time_horizon", TimeHorizon.SHORT)
-            block2.setdefault("source", AnswerSource.USER)
-            obj["context"] = block2
+            c = obj.get("context", self._empty_context())
+            c["current_situation"] = self._append_line(c.get("current_situation", ""), answer)
+            c["time_horizon"] = self._infer_time_horizon(c["current_situation"])
+            obj["context"] = c
 
         elif axis == Axis.PRINCIPLE:
-            block3: PrincipleBlock = obj.get("principle", {})
-            prior3 = block3.get("declared_purpose", "")
-            block3["declared_purpose"] = (prior3 + "\n" if prior3 else "") + answer
-            block3.setdefault("alignment", ClarityLevel.MEDIUM)
-            block3.setdefault("source", AnswerSource.USER)
-            obj["principle"] = block3
+            p = obj.get("principle", self._empty_principle())
+            if not p.get("declared_purpose"):
+                p["declared_purpose"] = answer
+            else:
+                # keep first as declared purpose; append further nuance into notes
+                obj["agent_notes"] = self._append_line(obj.get("agent_notes", ""), f"Principle nuance: {answer}")
+            p["alignment"] = self._infer_alignment(p.get("declared_purpose", ""))
+            obj["principle"] = p
+
+    # -------------------------
+    # Stop criteria
+    # -------------------------
+
+    def _should_stop(
+        self,
+        obj: DiscernmentObject,
+        state: InterviewState,
+        asked_per_axis: Dict[Axis, int],
+    ) -> bool:
+        if int(state.get("turns", 0)) >= self.config.max_turns:
+            state["stop_reason"] = "max_turns_reached"
+            return True
+
+        if self.config.stop_on_minimum_completeness and self._minimum_completeness_reached(obj):
+            state["stop_reason"] = "minimum_completeness_reached"
+            return True
+
+        # If all axes hit max, stop
+        if (
+            asked_per_axis[Axis.FOUNDATION] >= self.config.per_axis_max
+            and asked_per_axis[Axis.CONTEXT] >= self.config.per_axis_max
+            and asked_per_axis[Axis.PRINCIPLE] >= self.config.per_axis_max
+        ):
+            state["stop_reason"] = "per_axis_max_reached"
+            return True
+
+        return False
+
+    def _minimum_completeness_reached(self, obj: DiscernmentObject) -> bool:
+        has_f = bool(obj.get("foundation", {}).get("facts_key"))
+        has_c = bool(obj.get("context", {}).get("current_situation"))
+        has_p = bool(obj.get("principle", {}).get("declared_purpose"))
+        return has_f and has_c and has_p
 
     # -------------------------
     # Theme classification (initial)
@@ -355,9 +339,9 @@ class InterviewAgentV41:
                 pass
 
         s = statement.lower()
-        ethics_markers = ["sé que está mal", "engaña", "ilegal", "fraude", "mentir", "corrup", "trampa", "ético"]
-        pressure_markers = ["me obligan", "me piden", "presion", "ultimátum", "si no", "amenaz", "esperan que"]
-        survival_markers = ["dinero", "trabajo", "renta", "deuda", "pagar", "urgente", "necesito", "ingresos"]
+        ethics_markers = ["sé que está mal", "no es correcto", "ilegal", "fraude", "mentir", "corrup", "trampa", "ético"]
+        pressure_markers = ["me obligan", "me piden", "presion", "ultimátum", "ultimatum", "amenaz", "si no", "exigen"]
+        survival_markers = ["dinero", "trabajo", "renta", "deuda", "pagar", "urgente", "necesito", "ingresos", "estabilidad"]
 
         if any(m in s for m in ethics_markers):
             return Theme.ETHICS_VALUES
@@ -368,18 +352,13 @@ class InterviewAgentV41:
 
         return Theme.SURVIVAL_STABILITY
 
-
-        # Default: survival as most common base layer
-        return Theme.SURVIVAL_STABILITY
-
     # -------------------------
-    # Signal detection & reorientation (MVP)
+    # Signal detection + controlled reorientation
     # -------------------------
 
     def _detect_signals_and_maybe_reorient(self, obj: DiscernmentObject, state: InterviewState) -> None:
         """
         MVP signal detection from accumulated text.
-        In future: can use LLM to detect contradictions and thematic dominance.
         Controlled: can reorient only once.
         """
         if state.get("reoriented"):
@@ -397,23 +376,13 @@ class InterviewAgentV41:
                 return
 
         # 2) External pressure signals
-        pressure_signals = ["me obligan", "me piden", "no quiero problemas", "si no hago", "esperan que", "amenaz"]
+        pressure_signals = ["me obligan", "me exigen", "amenaza", "ultimátum", "ultimatum", "si no", "me presionan"]
         if any(sig in text for sig in pressure_signals):
             if obj["dominant_theme"] != Theme.EXTERNAL_PRESSURE:
                 obj["secondary_themes"] = self._merge_secondary(obj.get("secondary_themes", []), obj["dominant_theme"])
                 obj["dominant_theme"] = Theme.EXTERNAL_PRESSURE
                 state["reoriented"] = True
                 return
-
-        # 3) Contradiction placeholder (very simple)
-        # Example: "no me afecta" and later "me preocupa" -> coherence contradiction
-        if "no me afecta" in text and "me preocupa" in text:
-            self._add_contradiction(
-                obj,
-                description="Possible internal inconsistency: 'no me afecta' vs 'me preocupa'.",
-                axes=[Axis.CONTEXT, Axis.PRINCIPLE],
-                ctype=ContradictionType.COHERENCE,
-            )
 
     # -------------------------
     # Finalization
@@ -424,11 +393,9 @@ class InterviewAgentV41:
         Sets decision_object and completeness based on collected blocks.
         In future: use LLM to compress and normalize.
         """
-        # Decision object (MVP): derive from original statement + theme
         if not obj.get("decision_object"):
             obj["decision_object"] = self._derive_decision_object(obj)
 
-        # Completeness: if we have at least some content per axis
         has_f = bool(obj.get("foundation", {}).get("facts_key"))
         has_c = bool(obj.get("context", {}).get("current_situation"))
         has_p = bool(obj.get("principle", {}).get("declared_purpose"))
@@ -438,10 +405,22 @@ class InterviewAgentV41:
         elif has_f or has_c or has_p:
             obj["completeness"] = CompletenessLevel.PARTIAL
         else:
-            obj["completeness"] = CompletenessLevel.INSUFFICIENT
+            obj["completeness"] = CompletenessLevel.INCOMPLETE
 
-        # Keep final note about turns
+        # Notes
+        stop_reason = state.get("stop_reason") or ""
+        if stop_reason:
+            self._append_note(obj, f"Stop reason: {stop_reason}")
         self._append_note(obj, f"Turns: {state.get('turns', 0)}")
+
+        # V4.1.1: soft contradiction detection (non-invasive)
+        try:
+            obj["soft_contradictions"] = detect_soft_contradictions(obj)
+            if obj.get("soft_contradictions"):
+                self._append_note(obj, f"Soft contradictions: {len(obj['soft_contradictions'])}")
+        except Exception:
+            # Never block finalization on soft contradiction detection
+            obj["soft_contradictions"] = []
 
     def _derive_decision_object(self, obj: DiscernmentObject) -> str:
         """
@@ -449,7 +428,7 @@ class InterviewAgentV41:
         - If LLM available: produce a single-sentence normalized decision.
         - Else: fallback to original statement + theme tag.
         """
-        base = obj.get("original_statement", "").strip()
+        base = (obj.get("original_statement") or "").strip()
         theme = obj.get("dominant_theme", Theme.SURVIVAL_STABILITY).value
 
         if self.llm is not None:
@@ -477,35 +456,83 @@ class InterviewAgentV41:
 
         return f"{base} (theme={theme})"
 
-    from .soft_contradiction_detector import detect_soft_contradictions
+    # -------------------------
+    # Blocks defaults + inference helpers
+    # -------------------------
+
+    def _empty_foundation(self) -> FoundationBlock:
+        return {"facts_key": "", "clarity": ClarityLevel.MEDIUM, "source": "user"}
+
+    def _empty_context(self) -> ContextBlock:
+        return {"current_situation": "", "time_horizon": TimeHorizon.UNKNOWN, "source": "user"}
+
+    def _empty_principle(self) -> PrincipleBlock:
+        return {"declared_purpose": "", "alignment": ClarityLevel.MEDIUM, "source": "user"}
+
+    def _infer_clarity(self, txt: str) -> ClarityLevel:
+        t = (txt or "").strip()
+        if len(t) >= 60:
+            return ClarityLevel.HIGH
+        if len(t) >= 20:
+            return ClarityLevel.MEDIUM
+        return ClarityLevel.LOW
+
+    def _infer_alignment(self, purpose: str) -> ClarityLevel:
+        p = (purpose or "").strip().lower()
+        if not p or "no lo se" in p or "no sé" in p:
+            return ClarityLevel.LOW
+        if len(p) >= 20:
+            return ClarityLevel.MEDIUM
+        return ClarityLevel.MEDIUM
+
+    def _infer_time_horizon(self, txt: str) -> TimeHorizon:
+        t = (txt or "").lower()
+        if any(x in t for x in ["temporal", "por ahora", "corto plazo", "solo un tiempo", "es temporal"]):
+            return TimeHorizon.SHORT
+        if any(x in t for x in ["largo plazo", "permanente", "para siempre", "a largo plazo"]):
+            return TimeHorizon.LONG
+        return TimeHorizon.UNKNOWN
 
     # -------------------------
-    # Utilities
+    # Small utilities
     # -------------------------
 
     def _append_note(self, obj: DiscernmentObject, note: str) -> None:
-        prior = obj.get("agent_notes", "")
-        obj["agent_notes"] = (prior + "\n" if prior else "") + note
+        obj["agent_notes"] = self._append_line(obj.get("agent_notes", ""), note)
+
+    def _append_line(self, base: str, line: str) -> str:
+        line = (line or "").strip()
+        if not line:
+            return base
+        if not base:
+            return line
+        return base + "\n" + line
 
     def _all_text(self, obj: DiscernmentObject) -> str:
-        parts: List[str] = []
-        parts.append(obj.get("original_statement", ""))
-
-        f = obj.get("foundation", {})
-        c = obj.get("context", {})
-        p = obj.get("principle", {})
-        parts.append(f.get("facts_key", ""))
-        parts.append(c.get("current_situation", ""))
-        parts.append(p.get("declared_purpose", ""))
-
-        return "\n".join([x for x in parts if x])
+        parts = [
+            obj.get("original_statement", ""),
+            obj.get("foundation", {}).get("facts_key", ""),
+            obj.get("context", {}).get("current_situation", ""),
+            obj.get("principle", {}).get("declared_purpose", ""),
+        ]
+        return "\n".join([p for p in parts if p])
 
     def _merge_secondary(self, existing: List[Theme], add: Theme) -> List[Theme]:
         if add in existing:
             return existing
         return existing + [add]
 
-    def _add_contradiction(self, obj: DiscernmentObject, description: str, axes: List[Axis], ctype: ContradictionType) -> None:
+    # -------------------------
+    # Hard contradiction placeholder (optional)
+    # -------------------------
+
+    def _add_contradiction(
+        self,
+        obj: DiscernmentObject,
+        description: str,
+        axes: List[Axis],
+        ctype: ContradictionType,
+    ) -> None:
         contradictions: List[ContradictionItem] = obj.get("contradictions", [])
         contradictions.append(
             {
@@ -515,5 +542,3 @@ class InterviewAgentV41:
             }
         )
         obj["contradictions"] = contradictions
-        obj["contradictions"] = detect_soft_contradictions(obj)
-
