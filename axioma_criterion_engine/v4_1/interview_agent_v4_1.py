@@ -477,6 +477,7 @@ class InterviewAgentV41:
 
         return f"{base} (theme={theme})"
 
+    from .soft_contradiction_detector import detect_soft_contradictions
 
     # -------------------------
     # Utilities
@@ -514,3 +515,5 @@ class InterviewAgentV41:
             }
         )
         obj["contradictions"] = contradictions
+        obj["contradictions"] = detect_soft_contradictions(obj)
+
