@@ -326,12 +326,38 @@ class InterviewAgentV41:
     # Theme classification (initial)
     # -------------------------
 
-    def _classify_theme_initial(self, statement: str) -> Theme:
+        def _classify_theme_initial(self, statement: str) -> Theme:
         """
-        MVP heuristic classifier (replaceable by LLM classification).
+        Theme classification:
+        - If LLM is available: ask it to classify into the 3 MVP themes.
+        - Else: fallback to heuristic.
         """
-        s = statement.lower()
+        if self.llm is not None:
+            try:
+                prompt = (
+                    "Clasifica el siguiente caso en UN SOLO tema dominante, eligiendo EXACTAMENTE uno:\n"
+                    "- survival_stability\n"
+                    "- ethics_values\n"
+                    "- external_pressure\n\n"
+                    "Responde SOLO con el identificador.\n\n"
+                    f"Caso: {statement}\n"
+                )
+                out = (self.llm.generate(prompt) or "").strip().lower()
 
+                # Normaliza posibles variaciones
+                mapping = {
+                    "survival_stability": Theme.SURVIVAL_STABILITY,
+                    "ethics_values": Theme.ETHICS_VALUES,
+                    "external_pressure": Theme.EXTERNAL_PRESSURE,
+                }
+                if out in mapping:
+                    return mapping[out]
+            except Exception:
+                # Si falla el LLM, cae a heurística silenciosamente.
+                pass
+
+        # Fallback heurístico
+        s = statement.lower()
         ethics_markers = ["sé que está mal", "engaña", "ilegal", "fraude", "mentir", "corrup", "trampa", "ético"]
         pressure_markers = ["me obligan", "me piden", "presion", "ultimátum", "si no", "amenaz", "esperan que"]
         survival_markers = ["dinero", "trabajo", "renta", "deuda", "pagar", "urgente", "necesito", "ingresos"]
@@ -342,6 +368,9 @@ class InterviewAgentV41:
             return Theme.EXTERNAL_PRESSURE
         if any(m in s for m in survival_markers):
             return Theme.SURVIVAL_STABILITY
+
+        return Theme.SURVIVAL_STABILITY
+
 
         # Default: survival as most common base layer
         return Theme.SURVIVAL_STABILITY
@@ -417,9 +446,38 @@ class InterviewAgentV41:
         # Keep final note about turns
         self._append_note(obj, f"Turns: {state.get('turns', 0)}")
 
-    def _derive_decision_object(self, obj: DiscernmentObject) -> str:
+        def _derive_decision_object(self, obj: DiscernmentObject) -> str:
+        """
+        Derive a clear decision_object:
+        - If LLM available: produce a single-sentence normalized decision.
+        - Else: fallback to original statement + theme tag.
+        """
         base = obj.get("original_statement", "").strip()
         theme = obj.get("dominant_theme", Theme.SURVIVAL_STABILITY).value
+
+        if self.llm is not None:
+            try:
+                ftxt = obj.get("foundation", {}).get("facts_key", "")
+                ctxt = obj.get("context", {}).get("current_situation", "")
+                ptxt = obj.get("principle", {}).get("declared_purpose", "")
+
+                prompt = (
+                    "Reformula en UNA sola frase clara el objeto de la decisión (decision_object).\n"
+                    "Debe describir QUÉ se decide y, si aplica, la tensión central.\n"
+                    "No moralices. No aconsejes.\n\n"
+                    f"Tema dominante: {theme}\n"
+                    f"Afirmación original: {base}\n"
+                    f"Fundamento (texto): {ftxt}\n"
+                    f"Contexto (texto): {ctxt}\n"
+                    f"Principio (texto): {ptxt}\n\n"
+                    "Salida: una sola frase.\n"
+                )
+                out = (self.llm.generate(prompt) or "").strip()
+                if out:
+                    return out
+            except Exception:
+                pass
+
         return f"{base} (theme={theme})"
 
     # -------------------------
