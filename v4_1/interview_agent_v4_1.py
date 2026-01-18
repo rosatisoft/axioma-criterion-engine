@@ -332,6 +332,7 @@ class InterviewAgentV41:
         - If LLM is available: ask it to classify into the 3 MVP themes.
         - Else: fallback to heuristic.
         """
+        pass
         if self.llm is not None:
             try:
                 prompt = (
