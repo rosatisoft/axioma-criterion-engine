@@ -131,3 +131,10 @@ class InterviewState(TypedDict, total=False):
     asked: List[str]  # store question IDs or raw question text
     stop_reason: Optional[str]
     reoriented: bool
+
+class SoftContradictionItem(TypedDict):
+    type: SoftContradictionType
+    severity: SoftContradictionSeverity
+    affected_axes: list[str]   # ["F","C","P"]
+    note: str
+    suggested_action: SoftContradictionAction
