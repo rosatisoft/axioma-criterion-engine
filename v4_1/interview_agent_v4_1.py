@@ -326,13 +326,12 @@ class InterviewAgentV41:
     # Theme classification (initial)
     # -------------------------
 
-        def _classify_theme_initial(self, statement: str) -> Theme:
+    def _classify_theme_initial(self, statement: str) -> Theme:
         """
         Theme classification:
         - If LLM is available: ask it to classify into the 3 MVP themes.
         - Else: fallback to heuristic.
         """
-        pass
         if self.llm is not None:
             try:
                 prompt = (
@@ -345,7 +344,6 @@ class InterviewAgentV41:
                 )
                 out = (self.llm.generate(prompt) or "").strip().lower()
 
-                # Normaliza posibles variaciones
                 mapping = {
                     "survival_stability": Theme.SURVIVAL_STABILITY,
                     "ethics_values": Theme.ETHICS_VALUES,
@@ -354,10 +352,8 @@ class InterviewAgentV41:
                 if out in mapping:
                     return mapping[out]
             except Exception:
-                # Si falla el LLM, cae a heurística silenciosamente.
                 pass
 
-        # Fallback heurístico
         s = statement.lower()
         ethics_markers = ["sé que está mal", "engaña", "ilegal", "fraude", "mentir", "corrup", "trampa", "ético"]
         pressure_markers = ["me obligan", "me piden", "presion", "ultimátum", "si no", "amenaz", "esperan que"]
@@ -447,7 +443,7 @@ class InterviewAgentV41:
         # Keep final note about turns
         self._append_note(obj, f"Turns: {state.get('turns', 0)}")
 
-        def _derive_decision_object(self, obj: DiscernmentObject) -> str:
+    def _derive_decision_object(self, obj: DiscernmentObject) -> str:
         """
         Derive a clear decision_object:
         - If LLM available: produce a single-sentence normalized decision.
@@ -480,6 +476,7 @@ class InterviewAgentV41:
                 pass
 
         return f"{base} (theme={theme})"
+
 
     # -------------------------
     # Utilities
