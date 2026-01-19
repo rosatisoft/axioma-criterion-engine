@@ -123,6 +123,27 @@ def _heuristic_detect(obj: DiscernmentObject) -> List[ContradictionItem]:
     ptxt = _normalize(str((obj.get("principle", {}) or {}).get("declared_purpose", "")))
     alltxt = " ".join([statement, ftxt, ctxt, ptxt]).strip()
 
+        # 0) Popularidad ≠ evidencia: "todos lo dicen / todo el mundo lo dice / dicen que..."
+    popularity_markers = [
+        "todos lo dicen",
+        "todo el mundo lo dice",
+        "lo dice todo el mundo",
+        "dicen que",
+        "se dice que",
+        "todo mundo sabe",
+        "todos dicen",
+    ]
+    if any(m in alltxt for m in popularity_markers):
+        out.append(
+            _soft_to_contradiction_item(
+                SoftContradictionType.NORMATIVE_VS_EVIDENCE,
+                "El fundamento apela a popularidad/rumor ('todos lo dicen') en lugar de evidencia verificable.",
+                severity=SoftContradictionSeverity.MEDIUM,
+                action=SoftContradictionAction.ASK_FOLLOWUP,
+                evidence=[m for m in popularity_markers if m in alltxt][:2],
+            )
+        )
+
     # 1) "debo/tengo que" + "sin urgencia / no es urgente" → NORMATIVE_VS_EVIDENCE
     if ("debo" in statement or "tengo que" in statement) and ("sin urgencia" in alltxt or "no es urgente" in alltxt):
         out.append(
