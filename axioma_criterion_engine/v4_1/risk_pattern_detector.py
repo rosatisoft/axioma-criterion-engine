@@ -12,9 +12,19 @@ _SEVERITY_TO_RISK_DELTA = {
     "high": 0.35,
 }
 
+import re
+import unicodedata
+
+def _strip_accents(s: str) -> str:
+    s = unicodedata.normalize("NFKD", s)
+    return "".join(ch for ch in s if not unicodedata.combining(ch))
+
 def _norm(s: str) -> str:
     s = (s or "").strip().lower()
-    s = re.sub(r"\s+", " ", s)
+    s = _strip_accents(s)
+    # deja solo letras/numeros/espacios
+    s = re.sub(r"[^a-z0-9\s]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
     return s
 
 def _collect_text(obj: Dict[str, Any]) -> str:
