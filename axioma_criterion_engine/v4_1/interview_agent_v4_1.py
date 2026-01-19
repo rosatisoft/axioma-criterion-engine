@@ -368,6 +368,20 @@ class InterviewAgentV41:
             # Never block finalization on soft contradiction detection
             obj["soft_contradictions"] = []
 
+        # V4.1.2: risk pattern detection (determinista)
+        try:
+            from .risk_pattern_detector import detect_risk_patterns
+            risk_pack = detect_risk_patterns(obj)
+            obj["risk_signals"] = risk_pack.get("signals", [])
+            obj["risk_delta"] = risk_pack.get("risk_delta", 0.0)
+            obj["missing_context_count"] = risk_pack.get("missing_context_count", 0)
+            if obj["risk_signals"]:
+                self._append_note(obj, f"Risk signals: {len(obj['risk_signals'])}")
+        except Exception:
+            obj["risk_signals"] = []
+            obj["risk_delta"] = 0.0
+            obj["missing_context_count"] = 0
+
     def _derive_decision_object(self, obj: DiscernmentObject) -> str:
         base = (obj.get("original_statement") or "").strip()
         theme = obj.get("dominant_theme", Theme.SURVIVAL_STABILITY).value
@@ -472,4 +486,5 @@ class InterviewAgentV41:
         if any(x in t for x in ["largo plazo", "permanente", "para siempre", "a largo plazo"]):
             return TimeHorizon.LONG
         return TimeHorizon.MEDIUM
+
 
