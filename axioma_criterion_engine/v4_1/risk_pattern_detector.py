@@ -27,6 +27,27 @@ def _norm(s: str) -> str:
     s = re.sub(r"\s+", " ", s).strip()
     return s
 
+def _tokens(s: str) -> List[str]:
+    s = _norm(s)
+    return [t for t in s.split(" ") if t]
+
+def _match_phrase_tokens(text_norm: str, phrase: str) -> bool:
+    """
+    True si TODAS las palabras significativas del trigger están en el texto.
+    """
+    p_tokens = _tokens(phrase)
+    if not p_tokens:
+        return False
+
+    # opcional: ignora palabras muy comunes
+    stop = {"de", "la", "el", "una", "un", "que", "yo", "mi", "mas", "mucho", "muchas", "tener", "quiero", "debo"}
+    key_tokens = [t for t in p_tokens if t not in stop]
+
+    # si se quedaron muy pocas, usa todas
+    use_tokens = key_tokens if len(key_tokens) >= 2 else p_tokens
+
+    return all(t in text_norm for t in use_tokens)
+
 def _collect_text(obj: Dict[str, Any]) -> str:
     parts: List[str] = []
     parts.append(str(obj.get("original_statement", "")))
@@ -58,8 +79,7 @@ def detect_risk_patterns(obj: Dict[str, Any]) -> Dict[str, Any]:
     for pat in RISK_PATTERNS_V41:
         hits: List[str] = []
         for phrase in pat.get("trigger_phrases", []):
-            ph = _norm(phrase)
-            if ph and ph in text:
+            if _match_phrase_tokens(text, phrase):
                 hits.append(phrase)
 
         if not hits:
