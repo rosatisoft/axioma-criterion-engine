@@ -195,6 +195,7 @@ def _apply_contradictions(obj: DiscernmentObject) -> Tuple[List[str], float]:
 # -----------------------------
 
 def _compute_risk_index(obj: DiscernmentObject) -> float:
+    # 1) Riesgos declarados manualmente (si existen)
     risks = obj.get("declared_risks", {})
     risk_value = 0.0
 
@@ -202,7 +203,11 @@ def _compute_risk_index(obj: DiscernmentObject) -> float:
         if isinstance(level, RiskLevel):
             risk_value += RISK_IMPACT.get(level, 0.0)
 
-    # Normalize to [0,1]
+    # 2) Riesgo por patrones (determinista)
+    # risk_delta ya viene normalizado [0,1]
+    risk_delta = float(obj.get("risk_delta", 0.0) or 0.0)
+    risk_value += risk_delta
+
     return min(risk_value, 1.0)
 
 
@@ -210,10 +215,22 @@ def _compute_confidence(obj: DiscernmentObject) -> float:
     completeness = obj.get("completeness", CompletenessLevel.PARTIAL)
     base = COMPLETENESS_CONFIDENCE.get(completeness, 0.75)
 
-    # Confidence reduction if contradictions exist
+    # 1) Baja por contradicciones (como ya tienes)
     contradictions = len(obj.get("contradictions", []))
     if contradictions:
         base -= min(0.1 * contradictions, 0.3)
+
+    # 2) Baja por contexto crítico ausente (patrones)
+    missing_count = int(obj.get("missing_context_count", 0) or 0)
+
+    # Regla: cada 3 variables críticas faltantes resta 0.05, cap 0.20
+    if missing_count > 0:
+        base -= min(0.05 * (missing_count // 3), 0.20)
+
+    # 3) Baja leve adicional si risk_delta es alto (no juicio, solo incertidumbre)
+    risk_delta = float(obj.get("risk_delta", 0.0) or 0.0)
+    if risk_delta >= 0.35:
+        base -= 0.05
 
     return max(base, 0.3)
 
