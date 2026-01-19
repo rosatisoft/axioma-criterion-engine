@@ -350,7 +350,7 @@ class InterviewAgentV41:
         elif has_f or has_c or has_p:
             obj["completeness"] = CompletenessLevel.PARTIAL
         else:
-            obj["completeness"] = CompletenessLevel.INCOMPLETE
+            obj["completeness"] = CompletenessLevel.INSUFFICIENTE
 
         stop_reason = state.get("stop_reason") or ""
         if stop_reason:
@@ -472,3 +472,4 @@ class InterviewAgentV41:
         if any(x in t for x in ["largo plazo", "permanente", "para siempre", "a largo plazo"]):
             return TimeHorizon.LONG
         return TimeHorizon.MEDIUM
+
