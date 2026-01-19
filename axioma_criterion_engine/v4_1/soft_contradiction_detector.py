@@ -147,7 +147,7 @@ def _heuristic_detect(obj: DiscernmentObject) -> List[ContradictionItem]:
         )
 
     # 3) Ambigüedad semántica: palabras borrosas sin operacionalizar
-    ambiguous_markers = ["mejor", "mucho", "real", "verdad", "éxito", "feliz", "propósito", "simulación"]
+    ambiguous_markers = ["mejor", "mucho", "real", "verdad", "éxito", "feliz", "propósito", "simulación", "simulacion"]
     if any(w in statement for w in ambiguous_markers) and len(statement.split()) < 12:
         out.append(
             _soft_to_contradiction_item(
