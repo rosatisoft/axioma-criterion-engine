@@ -100,7 +100,7 @@ def _soft_to_contradiction_item(
     item: Dict[str, Any] = {
         "type": ctype,
         "description": f"[{t.value} | {severity.value} | {action.value}] {description}",
-        "axes": axes,
+        "axes_affected": axes,
     }
     if evidence:
         item["evidence"] = evidence
