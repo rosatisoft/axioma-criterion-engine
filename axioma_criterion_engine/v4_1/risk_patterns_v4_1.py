@@ -36,12 +36,12 @@ RISK_PATTERNS_V41: List[RiskPattern] = [
         "domain": "relationships",
         "title": "Diferencia de edad significativa (pareja)",
         "trigger_phrases": [
-            "quiero una pareja mucho mas joven",
-            "quiero una novia mucho mas joven",
-            "quiero un novio mucho mas joven",
-            "la edad es solo un numero",
+            "novia mucho mas joven",
+            "pareja mucho mas joven",
+            "una novia mas joven",
+            "una pareja mas joven",
             "pareja mucho menor",
-            "pareja mucho mayor",
+            "la edad es solo un numero",
         ],
         "observed_risks": [
             "Posible asimetría de poder (económica, emocional o social) si existen dependencias.",
