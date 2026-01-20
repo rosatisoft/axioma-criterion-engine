@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+import unicodedata
+from typing import Any, Dict, List, Optional
 
 from .discernment_enums import Axis, ContradictionType
 from .discernment_types import DiscernmentObject, ContradictionItem  # TypedDicts/aliases en tu repo
 
-# Usa TUS enums ya creados
 from .soft_contradictions import (
     SoftContradictionType,
     SoftContradictionSeverity,
@@ -25,7 +24,7 @@ except Exception:  # pragma: no cover
 
 
 # -----------------------------
-# Utilidades
+# Utilidades / Mapeos
 # -----------------------------
 
 _SOFT_TO_CONTRADICTION_TYPE: Dict[SoftContradictionType, ContradictionType] = {
@@ -68,8 +67,17 @@ def _all_text(obj: DiscernmentObject) -> str:
     return "\n".join([x for x in parts if x]).strip()
 
 
+def _strip_accents(s: str) -> str:
+    # Convierte "simulación" -> "simulacion"
+    s = unicodedata.normalize("NFKD", s or "")
+    return "".join(ch for ch in s if not unicodedata.combining(ch))
+
+
 def _normalize(s: str) -> str:
-    return re.sub(r"\s+", " ", (s or "").strip()).lower()
+    s = (s or "").strip().lower()
+    s = _strip_accents(s)
+    s = re.sub(r"\s+", " ", s)
+    return s
 
 
 def _default_action_for(t: SoftContradictionType) -> SoftContradictionAction:
@@ -92,14 +100,10 @@ def _soft_to_contradiction_item(
     ctype = _SOFT_TO_CONTRADICTION_TYPE.get(t, ContradictionType.COHERENCE)
     action = action or _default_action_for(t)
 
-    # ContradictionItem en tu repo probablemente tiene:
-    # - type (ContradictionType)
-    # - description (str)
-    # - axes (List[Axis])
-    # Si tu TypedDict tiene campos extra, puedes agregar.
     item: Dict[str, Any] = {
         "type": ctype,
         "description": f"[{t.value} | {severity.value} | {action.value}] {description}",
+        # OJO: en tu output actual estás usando axes_affected; lo dejamos consistente así.
         "axes_affected": axes,
     }
     if evidence:
@@ -114,6 +118,9 @@ def _soft_to_contradiction_item(
 def _heuristic_detect(obj: DiscernmentObject) -> List[ContradictionItem]:
     """
     Detecta solo lo obvio si no hay LLM o si el JSON del LLM falla.
+    Heurísticas diseñadas para:
+      - NO moralizar
+      - Señalar tensiones típicas (realidad/evidencia, urgencia, semántica, etc.)
     """
     out: List[ContradictionItem] = []
     statement = _normalize(str(obj.get("original_statement", "")))
@@ -121,9 +128,10 @@ def _heuristic_detect(obj: DiscernmentObject) -> List[ContradictionItem]:
     ftxt = _normalize(str((obj.get("foundation", {}) or {}).get("facts_key", "")))
     ctxt = _normalize(str((obj.get("context", {}) or {}).get("current_situation", "")))
     ptxt = _normalize(str((obj.get("principle", {}) or {}).get("declared_purpose", "")))
+
     alltxt = " ".join([statement, ftxt, ctxt, ptxt]).strip()
 
-        # 0) Popularidad ≠ evidencia: "todos lo dicen / todo el mundo lo dice / dicen que..."
+    # 0) Popularidad ≠ evidencia: "todos lo dicen / todo el mundo lo dice / dicen que..."
     popularity_markers = [
         "todos lo dicen",
         "todo el mundo lo dice",
@@ -144,11 +152,11 @@ def _heuristic_detect(obj: DiscernmentObject) -> List[ContradictionItem]:
             )
         )
 
-    # 1) "debo/tengo que" + "sin urgencia / no es urgente" → NORMATIVE_VS_EVIDENCE
+    # 1) "debo/tengo que" + "sin urgencia / no es urgente" → URGENCY_MISMATCH (mejor que normative_vs_evidence)
     if ("debo" in statement or "tengo que" in statement) and ("sin urgencia" in alltxt or "no es urgente" in alltxt):
         out.append(
             _soft_to_contradiction_item(
-                SoftContradictionType.NORMATIVE_VS_EVIDENCE,
+                SoftContradictionType.URGENCY_MISMATCH,
                 "La formulación es normativa ('debo') pero tú mismo indicas que no hay urgencia/presión real.",
                 severity=SoftContradictionSeverity.MEDIUM,
                 action=SoftContradictionAction.REFRAME,
@@ -168,7 +176,8 @@ def _heuristic_detect(obj: DiscernmentObject) -> List[ContradictionItem]:
         )
 
     # 3) Ambigüedad semántica: palabras borrosas sin operacionalizar
-    ambiguous_markers = ["mejor", "mucho", "real", "verdad", "éxito", "feliz", "propósito", "simulación", "simulacion"]
+    # Nota: como ya normalizamos acentos, "simulacion" cubre "simulación".
+    ambiguous_markers = ["mejor", "mucho", "real", "verdad", "exito", "feliz", "proposito", "simulacion"]
     if any(w in statement for w in ambiguous_markers) and len(statement.split()) < 12:
         out.append(
             _soft_to_contradiction_item(
@@ -176,6 +185,34 @@ def _heuristic_detect(obj: DiscernmentObject) -> List[ContradictionItem]:
                 "La afirmación usa términos que requieren definición operativa para evaluar con certeza.",
                 severity=SoftContradictionSeverity.LOW,
                 action=SoftContradictionAction.ASK_FOLLOWUP,
+            )
+        )
+
+    # 4) NUEVO: Señal de intención de control/dominación en relaciones (sin juicio moral; solo tensión de mutualidad)
+    # Ejemplo típico detectado: "la haría a mi manera" en contexto de "novia/pareja".
+    relationship_markers = ["novia", "novio", "pareja", "esposa", "esposo", "relacion", "relacion", "mi mujer", "mi esposo"]
+    control_markers = [
+        "a mi manera",
+        "a mi modo",
+        "como yo quiera",
+        "la haria a mi manera",
+        "la haria como yo quiera",
+        "obedecer",
+        "mandar",
+        "controlar",
+        "dominar",
+        "sumisa",
+        "sumiso",
+    ]
+    if any(rm in alltxt for rm in relationship_markers) and any(cm in alltxt for cm in control_markers):
+        ev = [cm for cm in control_markers if cm in alltxt][:2]
+        out.append(
+            _soft_to_contradiction_item(
+                SoftContradictionType.VALUE_CONFLICT,
+                "Aparece una señal de intención de control/dominación en una relación; puede chocar con mutualidad, límites y consentimiento explícito.",
+                severity=SoftContradictionSeverity.MEDIUM,
+                action=SoftContradictionAction.ASK_FOLLOWUP,
+                evidence=ev if ev else None,
             )
         )
 
@@ -254,6 +291,7 @@ def _llm_detect(obj: DiscernmentObject, llm: Any) -> List[ContradictionItem]:
             sev = SoftContradictionSeverity(it.get("severity", "medium"))
             act = SoftContradictionAction(it.get("action", _default_action_for(t).value))
             desc = str(it.get("description", "")).strip() or "Soft contradiction detected."
+
             ev = it.get("evidence", None)
             if isinstance(ev, list):
                 ev = [str(x) for x in ev][:3]
@@ -264,7 +302,7 @@ def _llm_detect(obj: DiscernmentObject, llm: Any) -> List[ContradictionItem]:
 
         return out
     except Exception:
-        # Si el JSON falla, no tiramos el motor: caemos a heurística
+        # Si el JSON falla, no tiramos el motor: caemos a heurística (desde detect_soft_contradictions)
         return []
 
 
@@ -296,7 +334,7 @@ def detect_soft_contradictions(
     if fallback_to_heuristics:
         found.extend(_heuristic_detect(obj))
 
-    # Deduplicación simple por description
+    # Deduplicación simple por description (estable y auditable)
     seen = set()
     unique: List[ContradictionItem] = []
     for c in found:
@@ -307,4 +345,3 @@ def detect_soft_contradictions(
         unique.append(c)
 
     return unique
-
