@@ -78,6 +78,7 @@ QUESTION_BANK: Dict[Theme, List[Question]] = {
         ("SS_F_1", Axis.FOUNDATION, "¿Qué hecho concreto hace necesaria esta decisión ahora?"),
         ("SS_F_2", Axis.FOUNDATION, "¿Qué ocurriría realmente si no tomaras esta decisión?"),
         ("SS_F_3", Axis.FOUNDATION, "¿Esto es una necesidad comprobable o una percepción de urgencia?"),
+        ("SS_F_4", Axis.FOUNDATION, "¿Qué lograrías realmente si tomas esta secisión?"),
         ("SS_C_1", Axis.CONTEXT, "¿Qué circunstancias actuales te colocan en esta situación?"),
         ("SS_C_2", Axis.CONTEXT, "¿Qué alternativas reales existen, aunque no sean ideales?"),
         ("SS_C_3", Axis.CONTEXT, "¿Esta decisión es temporal o te ata a largo plazo?"),
@@ -486,5 +487,6 @@ class InterviewAgentV41:
         if any(x in t for x in ["largo plazo", "permanente", "para siempre", "a largo plazo"]):
             return TimeHorizon.LONG
         return TimeHorizon.MEDIUM
+
 
 
