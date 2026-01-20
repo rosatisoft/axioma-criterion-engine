@@ -83,6 +83,11 @@ def detect_risk_patterns(obj: Dict[str, Any]) -> Dict[str, Any]:
                 hits.append(phrase)
 
         if not hits:
+            # debug TEMP
+            if pat.get("id") == "REL_AGE_GAP":
+                print("DEBUG TEXT:", text)
+                for phrase in pat.get("trigger_phrases", []):
+                    print("DEBUG PHRASE:", phrase, "->", _match_phrase_tokens(text, phrase))
             continue
 
         sev = pat.get("severity", "medium")
